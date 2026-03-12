@@ -80,6 +80,7 @@ export function keyIdForEd25519PublicKey(ed25519PublicKeyDerB64: string): string
 export function fingerprintForEd25519PublicKey(ed25519PublicKeyDerB64: string): string {
   const h = sha256(b64decode(ed25519PublicKeyDerB64));
   const hex = h.toString("hex");
+  // Group for readability (like SSH fingerprints).
   return hex.match(/.{1,4}/g)?.join(":") ?? hex;
 }
 
@@ -111,6 +112,7 @@ function buildInitTranscript(params: {
   clientEd25519Pub: string;
   clientX25519Pub: string;
 }): Buffer {
+  // Stable, language-agnostic transcript encoding.
   const lines = [
     "tazhan-e2ee-v1",
     "handshake:init",
@@ -170,6 +172,7 @@ function makeNonce(prefix4: Buffer, seq: bigint): Buffer {
 
 type ReplayWindow = {
   maxSeq: bigint;
+  // Bit i (0..63) represents whether (maxSeq - i) has been seen.
   bitmap: bigint;
 };
 
@@ -336,6 +339,7 @@ export class E2eeDeviceSession {
       return rpc;
     }
     if (isRecord(rpc) && typeof rpc.type === "string" && rpc.type.startsWith("e2ee/")) {
+      // Avoid double-wrapping.
       return rpc as unknown as JsonValue;
     }
     if (!this.channel) {
@@ -366,6 +370,7 @@ export class E2eeDeviceSession {
     if (msg.type === "e2ee/packet") {
       return this.handlePacket(msg);
     }
+    // Ack/errors are only expected on the app side; ignore for forward compatibility.
     return { kind: "noop" };
   }
 
@@ -428,6 +433,7 @@ export class E2eeDeviceSession {
     try {
       this.trustedPeerKeys.set(peer.keyId, importEd25519PublicKey(peer.ed25519PublicKey));
     } catch {
+      // Ignore invalid peer keys.
     }
   }
 
@@ -518,6 +524,7 @@ export class E2eeDeviceSession {
     const nA2d = keyMaterial.slice(64, 68);
     const nD2a = keyMaterial.slice(68, 72);
 
+    // Device receives app->device (a2d) and sends device->app (d2a).
     this.channel = new E2eeChannel(init.sid, kD2a, kA2d, nD2a, nA2d);
     this.currentSid = init.sid;
     this.currentPeerKeyId = init.clientKeyId;
@@ -666,6 +673,7 @@ export class E2eeAppSession {
     const nA2d = keyMaterial.slice(64, 68);
     const nD2a = keyMaterial.slice(68, 72);
 
+    // App sends app->device (a2d) and receives device->app (d2a).
     this.channel = new E2eeChannel(ack.sid, kA2d, kD2a, nA2d, nD2a);
     this.currentSid = ack.sid;
     this.pending = null;

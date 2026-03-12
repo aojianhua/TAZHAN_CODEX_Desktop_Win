@@ -128,6 +128,7 @@ function workspaceWatchClear(): void {
     try {
       w.close();
     } catch {
+      // Best-effort.
     }
   }
   state.watchersByDir.clear();
@@ -138,6 +139,7 @@ function emitTerminalToRenderer(ev: TerminalEvent): void {
   try {
     mainWindow?.webContents.send("terminal:event", ev);
   } catch {
+    // Best-effort.
   }
 
   if (settings?.relay?.enabled && relayDevice) {
@@ -200,6 +202,23 @@ function emitToRenderer(ev: CodexEvent): void {
     const status = (ev.params as any)?.turn?.status ?? "completed";
     const threadId = (ev.params as any)?.threadId ?? "";
     const turnId = (ev.params as any)?.turn?.id ?? "";
+    const supported = (() => {
+      try {
+        return typeof Notification.isSupported === "function" ? Notification.isSupported() : true;
+      } catch {
+        return true;
+      }
+    })();
+
+    // Send a debug line to the renderer log so we can diagnose notification issues
+    // without requiring users to open the main-process console.
+    mainWindow?.webContents.send("codex:event", {
+      type: "stderr",
+      line: `[notify-debug] turn/completed thread=${threadId || "(missing)"} turn=${turnId || "(missing)"} status=${status} supported=${String(
+        supported
+      )}`
+    } satisfies CodexEvent);
+
     const notifyEnabled = (() => {
       if (!settings) {
         return true;
@@ -212,11 +231,17 @@ function emitToRenderer(ev: CodexEvent): void {
     })();
 
     if (!notifyEnabled) {
+      mainWindow?.webContents.send("codex:event", {
+        type: "stderr",
+        line: `[notify-debug] suppressed by settings: thread=${threadId || "(missing)"}`
+      } satisfies CodexEvent);
       return;
     }
 
     try {
       if (process.platform === "win32") {
+        // Windows toast notifications are much more reliable when an AUMID is set.
+        // This is safe to call multiple times (we only do it when notifying).
         app.setAppUserModelId("com.tazhan.desktop");
       }
 
@@ -224,22 +249,32 @@ function emitToRenderer(ev: CodexEvent): void {
         title: "Codex 回合已完成",
         body: `${status} ${threadId} ${turnId}`.trim()
       }).show();
+      mainWindow?.webContents.send("codex:event", {
+        type: "stderr",
+        line: "[notify-debug] OS notification requested"
+      } satisfies CodexEvent);
     } catch (err) {
       emitToRenderer({
         type: "stderr",
-        line: `failed to show OS notification: ${String(err)}`
+        line: `[notify-debug] failed to show OS notification: ${String(err)}`
       });
     }
 
+    // Best-effort sound + taskbar attention on Windows, even if the toast is suppressed by system settings.
     try {
       shell.beep();
-    } catch {}
+      mainWindow?.webContents.send("codex:event", { type: "stderr", line: "[notify-debug] shell.beep()" } satisfies CodexEvent);
+    } catch {
+      // Best-effort.
+      mainWindow?.webContents.send("codex:event", { type: "stderr", line: "[notify-debug] shell.beep() failed" } satisfies CodexEvent);
+    }
     try {
       mainWindow?.flashFrame(true);
       setTimeout(() => {
         mainWindow?.flashFrame(false);
       }, 1200);
     } catch {
+      // Best-effort.
     }
 
     const url = settings?.notifyWebhookUrl ?? "";
@@ -254,6 +289,21 @@ function emitRemoteToRenderer(ev: CodexEvent): void {
     const status = (ev.params as any)?.turn?.status ?? "completed";
     const threadId = (ev.params as any)?.threadId ?? "";
     const turnId = (ev.params as any)?.turn?.id ?? "";
+    const supported = (() => {
+      try {
+        return typeof Notification.isSupported === "function" ? Notification.isSupported() : true;
+      } catch {
+        return true;
+      }
+    })();
+
+    mainWindow?.webContents.send("remote:event", {
+      type: "stderr",
+      line: `[notify-debug] turn/completed thread=${threadId || "(missing)"} turn=${turnId || "(missing)"} status=${status} supported=${String(
+        supported
+      )}`
+    } satisfies CodexEvent);
+
     const notifyEnabled = (() => {
       if (!settings) {
         return true;
@@ -266,6 +316,10 @@ function emitRemoteToRenderer(ev: CodexEvent): void {
     })();
 
     if (!notifyEnabled) {
+      mainWindow?.webContents.send("remote:event", {
+        type: "stderr",
+        line: `[notify-debug] suppressed by settings: thread=${threadId || "(missing)"}`
+      } satisfies CodexEvent);
       return;
     }
 
@@ -278,22 +332,30 @@ function emitRemoteToRenderer(ev: CodexEvent): void {
         title: "Codex Turn Completed",
         body: `${status} ${threadId} ${turnId}`.trim()
       }).show();
+      mainWindow?.webContents.send("remote:event", {
+        type: "stderr",
+        line: "[notify-debug] OS notification requested"
+      } satisfies CodexEvent);
     } catch (err) {
       emitRemoteToRenderer({
         type: "stderr",
-        line: `failed to show OS notification: ${String(err)}`
+        line: `[notify-debug] failed to show OS notification: ${String(err)}`
       });
     }
 
     try {
       shell.beep();
-    } catch {}
+      mainWindow?.webContents.send("remote:event", { type: "stderr", line: "[notify-debug] shell.beep()" } satisfies CodexEvent);
+    } catch {
+      mainWindow?.webContents.send("remote:event", { type: "stderr", line: "[notify-debug] shell.beep() failed" } satisfies CodexEvent);
+    }
     try {
       mainWindow?.flashFrame(true);
       setTimeout(() => {
         mainWindow?.flashFrame(false);
       }, 1200);
     } catch {
+      // Best-effort.
     }
 
     const url = settings?.notifyWebhookUrl ?? "";
@@ -340,6 +402,7 @@ function runCapture(command: string, args: string[], timeoutMs: number): Promise
       try {
         proc.kill();
       } catch {
+        // Best-effort.
       }
       finish({ code: null, stdout, stderr: `${stderr}\n(timeout after ${timeoutMs}ms)`.trim() });
     }, timeoutMs);
@@ -359,6 +422,36 @@ function runCapture(command: string, args: string[], timeoutMs: number): Promise
 function parseVersion(output: string): string | null {
   const match = output.match(/(\d+\.\d+\.\d+)/);
   return match ? match[1] : null;
+}
+
+type VersionCommandProbe = {
+  command: string;
+  output: string;
+  version: string | null;
+};
+
+type CodexCliResolution = {
+  command: string;
+  output: string;
+  version: string;
+};
+
+function configuredCodexCommand(): { command: string; usesDefaultCommand: boolean } {
+  const configured = settings?.codexPath?.trim() ?? "";
+  if (!configured || configured.toLowerCase() === "codex") {
+    return { command: "codex", usesDefaultCommand: true };
+  }
+  return { command: configured, usesDefaultCommand: false };
+}
+
+async function probeVersionCommand(command: string): Promise<VersionCommandProbe> {
+  const res = await runCapture(command, ["--version"], 5000);
+  const output = `${res.stdout}\n${res.stderr}`.trim();
+  return {
+    command,
+    output,
+    version: parseVersion(output)
+  };
 }
 
 type NodeRuntimeResolution = {
@@ -408,6 +501,94 @@ function npmCommandForNode(nodeCommand: string | null): string {
     return "npm";
   }
   return path.join(path.dirname(nodeCommand), process.platform === "win32" ? "npm.cmd" : "npm");
+}
+
+async function resolveNpmGlobalPrefix(npmCommand: string): Promise<string | null> {
+  const res = await runCapture(npmCommand, ["config", "get", "prefix"], 5000);
+  if (res.code !== 0) {
+    return null;
+  }
+
+  const lines = `${res.stdout}\n${res.stderr}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("npm WARN"));
+  const prefix = lines.at(-1) ?? "";
+  if (!prefix || prefix.toLowerCase() === "undefined" || prefix.toLowerCase() === "null") {
+    return null;
+  }
+  return prefix;
+}
+
+function codexCommandForNpmPrefix(prefix: string): string {
+  return process.platform === "win32" ? path.join(prefix, "codex.cmd") : path.join(prefix, "bin", "codex");
+}
+
+async function defaultCodexCommandCandidates(): Promise<string[]> {
+  const candidates = new Set<string>(["codex"]);
+
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA?.trim() ?? "";
+    if (appData) {
+      candidates.add(path.join(appData, "npm", "codex.cmd"));
+    }
+  }
+
+  const nodeRuntime = await resolveNodeRuntime();
+  if (nodeRuntime.version) {
+    const prefix = await resolveNpmGlobalPrefix(npmCommandForNode(nodeRuntime.command));
+    if (prefix) {
+      candidates.add(codexCommandForNpmPrefix(prefix));
+    }
+  }
+
+  return [...candidates];
+}
+
+async function resolveCodexCli(): Promise<{
+  resolution: CodexCliResolution | null;
+  output: string;
+  usesDefaultCommand: boolean;
+}> {
+  const { command, usesDefaultCommand } = configuredCodexCommand();
+  const probe = await probeVersionCommand(command);
+  if (probe.version) {
+    return {
+      resolution: {
+        command: probe.command,
+        output: probe.output,
+        version: probe.version
+      },
+      output: probe.output,
+      usesDefaultCommand
+    };
+  }
+
+  if (!usesDefaultCommand) {
+    return { resolution: null, output: probe.output, usesDefaultCommand };
+  }
+
+  const candidates = await defaultCodexCommandCandidates();
+  for (const candidate of candidates) {
+    if (candidate === probe.command) {
+      continue;
+    }
+
+    const fallbackProbe = await probeVersionCommand(candidate);
+    if (fallbackProbe.version) {
+      return {
+        resolution: {
+          command: fallbackProbe.command,
+          output: fallbackProbe.output,
+          version: fallbackProbe.version
+        },
+        output: probe.output,
+        usesDefaultCommand
+      };
+    }
+  }
+
+  return { resolution: null, output: probe.output, usesDefaultCommand };
 }
 
 async function detectNodeRuntime(): Promise<{ installed: boolean; version: string | null }> {
@@ -698,6 +879,7 @@ function isSafeProviderId(provider: string): boolean {
   if (!v) {
     return false;
   }
+  // Keep this strict so we can write `[model_providers.<id>]` without quoting.
   return /^[a-zA-Z0-9_-]+$/.test(v);
 }
 
@@ -917,6 +1099,7 @@ function upsertCodexBaseUrl(configToml: string, provider: string, baseUrl: strin
     return out.join(newline);
   }
 
+  // Find an existing base_url line in the section.
   let insertAt = sectionStart + 1;
   for (let i = sectionStart + 1; i < lines.length; i++) {
     const line = lines[i] ?? "";
@@ -946,6 +1129,9 @@ function codexHomeDir(): string {
     return path.resolve(configured.trim());
   }
 
+  // NOTE: On Windows, some tools set the `HOME` env var to a non-user directory
+  // (e.g. Git/MSYS/Cygwin). `os.homedir()` uses USERPROFILE / known folders and
+  // is much more reliable for locating `C:\\Users\\<name>\\.codex`.
   return path.join(os.homedir(), ".codex");
 }
 
@@ -1189,6 +1375,7 @@ function parseAssistantContentFromChatCompletions(json: any): string | null {
       return content;
     }
   } catch {
+    // Best-effort.
   }
   return null;
 }
@@ -1338,6 +1525,7 @@ async function testProvider(baseUrlRaw: string, apiKeyRaw: string): Promise<Code
     } catch (err) {
       const latencyMs = Date.now() - started;
       if (attempt.suggestedBaseUrl) {
+        // The second attempt might succeed; keep trying.
         continue;
       }
       return {
@@ -1382,6 +1570,7 @@ function isSafeName(name: string): boolean {
   if (v.includes("\0")) {
     return false;
   }
+  // Disallow path traversal / separators. We keep this strict since the UI only needs a single segment name.
   if (v.includes("/") || v.includes("\\") || v === "." || v === "..") {
     return false;
   }
@@ -1696,6 +1885,7 @@ async function dispatchTazhanRequest(method: string, rawParams: unknown): Promis
           return { ok: false, error: "path is a directory" } satisfies WorkspaceOpResult;
         }
       } catch {
+        // If stat fails, we still attempt to write (creating a new file is ok).
       }
 
       try {
@@ -1745,6 +1935,7 @@ async function dispatchTazhanRequest(method: string, rawParams: unknown): Promis
         try {
           w.close();
         } catch {
+          // Best-effort.
         }
         state.watchersByDir.delete(dirAbs);
       }
@@ -1819,6 +2010,7 @@ async function dispatchTazhanRequest(method: string, rawParams: unknown): Promis
             try {
               term.write(String(data ?? ""));
             } catch {
+              // Best-effort.
             }
           },
           resize: (c2: number, r2: number) => {
@@ -1827,20 +2019,24 @@ async function dispatchTazhanRequest(method: string, rawParams: unknown): Promis
               const r3 = Number.isFinite(r2) && r2 > 0 ? Math.floor(r2) : r;
               term.resize(c3, r3);
             } catch {
+              // Best-effort.
             }
           },
           dispose: () => {
             try {
               term.offData(onData);
             } catch {
+              // Best-effort.
             }
             try {
               term.offExit(onExit);
             } catch {
+              // Best-effort.
             }
             try {
               term.kill();
             } catch {
+              // Best-effort.
             }
           }
         };
@@ -1851,7 +2047,7 @@ async function dispatchTazhanRequest(method: string, rawParams: unknown): Promis
         return {
           ok: false,
           terminalId: null,
-          error: `failed to start local terminal: ${String(err)}`
+          error: `failed to start local terminal: ${String(err)} (node-pty may require allowing build scripts: pnpm approve-builds)`
         } satisfies TerminalCreateResult;
       }
     }
@@ -1931,10 +2127,12 @@ async function dispatchTazhanRequest(method: string, rawParams: unknown): Promis
             if (prevBytes >= maxBytes) {
               return { next: prev, truncated: true };
             }
+            // Fast path.
             if (Buffer.byteLength(chunk, "utf8") <= maxBytes - prevBytes) {
               return { next: prev + chunk, truncated: false };
             }
 
+            // Binary search the largest prefix that fits.
             let lo = 1;
             let hi = chunk.length;
             let best = 0;
@@ -1995,6 +2193,7 @@ async function dispatchTazhanRequest(method: string, rawParams: unknown): Promis
             try {
               child.kill();
             } catch {
+              // Best-effort.
             }
             if (stdoutTruncated && !stdout.endsWith(truncSuffix)) {
               const res = clampAppendUtf8(stdout, truncSuffix, maxCapturedBytesPerStream);
@@ -2054,6 +2253,7 @@ async function handleRelayTazhanRpc(relay: RelayDeviceClient, rpc: unknown): Pro
   }
 
   if (isRpcNotification(rpc) && isTazhanRpcMethod(rpc.method)) {
+    // v1: no notification-only methods; ignore for forward compatibility.
     return true;
   }
 
@@ -2061,21 +2261,23 @@ async function handleRelayTazhanRpc(relay: RelayDeviceClient, rpc: unknown): Pro
 }
 
 async function readCodexCliInfo(): Promise<CodexCliInfo> {
-  const command = settings?.codexPath?.trim().length ? settings.codexPath.trim() : "codex";
-  const [nodeRuntime, vcRedistX64] = await Promise.all([detectNodeRuntime(), detectVcRedistX64()]);
-  const ver = await runCapture(command, ["--version"], 5000);
-  const output = `${ver.stdout}\n${ver.stderr}`.trim();
-  const version = parseVersion(output);
-  const installed = Boolean(version);
+  const [nodeRuntime, vcRedistX64, codexCli] = await Promise.all([
+    detectNodeRuntime(),
+    detectVcRedistX64(),
+    resolveCodexCli()
+  ]);
+  const installed = Boolean(codexCli.resolution);
+  const version = codexCli.resolution?.version ?? null;
 
   const latestVersion: string | null = null;
   const updateAvailable = false;
   let error: string | null = null;
 
   if (!installed) {
-    error = output.length ? output : "codex not found";
+    error = codexCli.output.length ? codexCli.output : "codex not found";
     return {
       installed: false,
+      resolvedCommand: null,
       version: null,
       latestVersion,
       updateAvailable,
@@ -2089,6 +2291,7 @@ async function readCodexCliInfo(): Promise<CodexCliInfo> {
 
   return {
     installed: true,
+    resolvedCommand: codexCli.resolution?.command ?? null,
     version,
     latestVersion,
     updateAvailable,
@@ -2123,6 +2326,7 @@ function isErrno(err: unknown, code: string): boolean {
 }
 
 function defaultCodexConfigToml(): string {
+  // Keep this minimal but parseable by our API settings screen (model_provider + base_url).
   return `model_provider = "custom"
 
 [model_providers.custom]
@@ -2179,22 +2383,21 @@ async function ensureCodexUserConfigFiles(): Promise<{ ok: boolean; error: strin
   return { ok: errors.length === 0, error: errors.length === 0 ? null : errors.join("; ") };
 }
 
-let codexCliEnsureInFlight: Promise<void> | null = null;
-async function ensureCodexCliInstalled(): Promise<void> {
+let codexCliEnsureInFlight: Promise<string> | null = null;
+async function ensureCodexCliInstalled(): Promise<string> {
   if (codexCliEnsureInFlight) {
     return await codexCliEnsureInFlight;
   }
 
   codexCliEnsureInFlight = (async () => {
-    const explicitPath = settings?.codexPath?.trim() ?? "";
-    const usesDefaultCommand = explicitPath.length === 0;
-
     const info = await readCodexCliInfo();
-    if (info.installed) {
-      return;
+    if (info.installed && info.resolvedCommand) {
+      return info.resolvedCommand;
     }
 
+    const { usesDefaultCommand } = configuredCodexCommand();
     if (!usesDefaultCommand) {
+      // If the user provided a custom path, we should not mutate their environment.
       throw new Error(info.error || "codex not found (custom path)");
     }
 
@@ -2202,7 +2405,7 @@ async function ensureCodexCliInstalled(): Promise<void> {
   })();
 
   try {
-    await codexCliEnsureInFlight;
+    return await codexCliEnsureInFlight;
   } finally {
     codexCliEnsureInFlight = null;
   }
@@ -2215,9 +2418,10 @@ async function ensureCodexLocalConnected(): Promise<void> {
   if (!settings) {
     throw new Error("settings not loaded");
   }
-  await ensureCodexCliInstalled();
+  const codexCommand = await ensureCodexCliInstalled();
+  // Best-effort: ensure the config files exist so the API settings modal can read them.
   void ensureCodexUserConfigFiles();
-  await codexLocal.connect(settings.codexPath, {
+  await codexLocal.connect(codexCommand, {
     name: "tazhan_desktop",
     title: "TAZHAN Desktop",
     version: app.getVersion()
@@ -2259,6 +2463,7 @@ function normalizeRelayBaseUrl(raw: string): { ok: true; baseUrl: string; insecu
     }
   }
 
+  // Canonicalize so downstream URL joins are stable.
   u.pathname = u.pathname.replace(/\/+$/, "");
   u.search = "";
   u.hash = "";
@@ -2276,6 +2481,7 @@ function encryptSecretForSettings(raw: string): string {
       return `enc:${enc.toString("base64")}`;
     }
   } catch {
+    // Fall back to plaintext.
   }
   return v;
 }
@@ -2439,6 +2645,7 @@ async function startRelayIfEnabled(): Promise<void> {
   await ensureRelayE2eeDeviceKeypair();
 
   if (settings.relay.allowedRoots.length === 0 && settings.defaultCwd.trim()) {
+    // Minimal safe default: only allow remote control inside the default workspace.
     await applySettingsPatch({ relay: { allowedRoots: [settings.defaultCwd.trim()] } as any });
   }
   if (settings.relay.allowedRoots.length === 0) {
@@ -2460,11 +2667,13 @@ async function startRelayIfEnabled(): Promise<void> {
     });
 
     relayDevice.on("pairing", async (p) => {
+      // Best-effort: persist the latest pairing code so a future UI can display it.
       try {
         await applySettingsPatch({
           relay: { lastPairingCode: p.pairingCode, lastPairingExpiresAt: p.expiresAt, lastPairingQrPayload: p.qrPayload } as any
         });
       } catch {
+        // ignore
       }
       emitToRenderer({ type: "stderr", line: `[relay] pairingCode=${p.pairingCode} expiresAt=${p.expiresAt}` });
     });
@@ -2495,7 +2704,9 @@ async function startRelayIfEnabled(): Promise<void> {
                 effectiveRpc = res.rpc;
               }
             } else if (s.relay.e2ee.required) {
+              // Enforce required mode even if the session isn't initialized yet.
               if (isRecord(rpc) && typeof rpc.type === "string" && rpc.type.startsWith("e2ee/")) {
+                // Allow handshake/error messages through.
               } else {
                 relayDevice!.sendRpc({ type: "e2ee/error", v: 1, code: "e2ee_required", message: "e2ee is required" } as any);
                 return;
@@ -2546,6 +2757,7 @@ async function startRelayIfEnabled(): Promise<void> {
     });
   }
 
+  // If we don't have auth yet, register once on first enable.
   relayDevice.configure(baseUrl, settings.relay.auth);
   const auth = settings.relay.auth;
   if (auth && typeof auth.expiresAt === "number") {
@@ -2578,6 +2790,7 @@ async function startRelayIfEnabled(): Promise<void> {
     relayDevice.configure(baseUrl, registered.auth);
   }
 
+  // Persist env overrides (best-effort) so the setting survives restarts.
   if (settings.relay.baseUrl.trim() !== baseUrl || !settings.relay.enabled) {
     await applySettingsPatch({ relay: { enabled: true, baseUrl } as any });
   }
@@ -2664,6 +2877,8 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
 
   if (process.platform === "win32") {
+    // Ensure Windows toast notifications are associated with a stable AUMID.
+    // When unset, `new Notification().show()` is often silently dropped.
     app.setAppUserModelId("com.tazhan.desktop");
   }
 
@@ -2672,6 +2887,7 @@ app.whenReady().then(async () => {
 
   await createWindow();
 
+  // Best-effort: connect to the cloud relay early so a phone can control this desktop.
   void startRelayIfEnabled().catch((err) => {
     emitToRenderer({ type: "stderr", line: `[relay] failed to start: ${String(err)}` });
   });
@@ -2689,6 +2905,7 @@ app.whenReady().then(async () => {
     const nextRelayEnabled = Boolean(settings.relay?.enabled);
     const nextRelayBaseUrl = (settings.relay?.baseUrl ?? "").trim();
 
+    // Ensure E2EE keys exist before we (re)connect, and refresh transforms for in-flight relay sessions.
     try {
       await ensureRelayE2eeDeviceKeypair();
     } catch (err) {
@@ -2727,11 +2944,13 @@ app.whenReady().then(async () => {
         return { ok: false, pairing: null, error: "relay is not initialized" };
       }
       const pairing = await relayDevice.refreshPairingCode();
+      // Best-effort persist for renderer display.
       try {
         await applySettingsPatch({
           relay: { lastPairingCode: pairing.pairingCode, lastPairingExpiresAt: pairing.expiresAt, lastPairingQrPayload: pairing.qrPayload } as any
         });
       } catch {
+        // ignore
       }
       return { ok: true, pairing: { pairingCode: pairing.pairingCode, expiresAt: pairing.expiresAt, qrPayload: pairing.qrPayload }, error: null };
     } catch (err) {
@@ -2823,6 +3042,7 @@ app.whenReady().then(async () => {
 
     const id = `term_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
+    // Ensure uniqueness (extremely unlikely, but cheap).
     if (terminals.has(id)) {
       return { ok: false, terminalId: null, error: "terminal id collision" };
     }
@@ -2852,6 +3072,7 @@ app.whenReady().then(async () => {
             try {
               ch.write(String(data ?? ""));
             } catch {
+              // Best-effort.
             }
           },
           resize: (c: number, r: number) => {
@@ -2860,6 +3081,7 @@ app.whenReady().then(async () => {
               const r2 = Number.isFinite(r) && r > 0 ? Math.floor(r) : rows;
               ch.setWindow(r2, c2, 0, 0);
             } catch {
+              // Best-effort.
             }
           },
           dispose: () => {
@@ -2868,14 +3090,17 @@ app.whenReady().then(async () => {
               ch.off("close", onClose);
               ch.off("error", onError);
             } catch {
+              // Best-effort.
             }
             try {
               ch.close();
             } catch {
+              // Best-effort.
             }
             try {
               ch.end();
             } catch {
+              // Best-effort.
             }
           }
         };
@@ -2887,7 +3112,9 @@ app.whenReady().then(async () => {
       }
     }
 
+    // local
     try {
+      // node-pty requires a native binding; it may fail to load if build scripts were blocked.
       const ptyMod: any = await import("node-pty");
       const pty = ptyMod?.spawn ? ptyMod : ptyMod?.default;
       if (!pty?.spawn) {
@@ -2924,6 +3151,7 @@ app.whenReady().then(async () => {
           try {
             term.write(String(data ?? ""));
           } catch {
+            // Best-effort.
           }
         },
         resize: (c: number, r: number) => {
@@ -2932,20 +3160,24 @@ app.whenReady().then(async () => {
             const r2 = Number.isFinite(r) && r > 0 ? Math.floor(r) : rows;
             term.resize(c2, r2);
           } catch {
+            // Best-effort.
           }
         },
         dispose: () => {
           try {
             term.offData(onData);
           } catch {
+            // Best-effort.
           }
           try {
             term.offExit(onExit);
           } catch {
+            // Best-effort.
           }
           try {
             term.kill();
           } catch {
+            // Best-effort.
           }
         }
       };
@@ -2956,7 +3188,7 @@ app.whenReady().then(async () => {
       return {
         ok: false,
         terminalId: null,
-        error: `failed to start local terminal: ${String(err)}`
+        error: `failed to start local terminal: ${String(err)} (node-pty may require allowing build scripts: pnpm approve-builds)`
       };
     }
   });
@@ -3057,6 +3289,7 @@ app.whenReady().then(async () => {
           try {
             child.kill();
           } catch {
+            // Best-effort.
           }
           resolve({ ok: false, stdout, stderr, exitCode: null, error: "timeout" });
         }, timeoutMs);
@@ -3126,6 +3359,7 @@ app.whenReady().then(async () => {
         try {
           w.close();
         } catch {
+          // Best-effort.
         }
         state.watchersByDir.delete(dirAbs);
       }
@@ -3429,6 +3663,7 @@ app.whenReady().then(async () => {
           return { ok: false, error: "path is a directory" };
         }
       } catch {
+        // If stat fails, we still attempt to write (creating a new file is ok).
       }
 
       try {
@@ -3541,16 +3776,19 @@ app.whenReady().then(async () => {
       const sshLine = `ssh -p ${port} ${sshTarget} -t "cd ${cwdQuoted} && bash -l"`;
 
       if (process.platform === "win32") {
+        // Open a real console window that stays open (/k). User can type password if needed.
         spawn("cmd.exe", ["/c", "start", "\"\"", "cmd.exe", "/k", sshLine], { windowsHide: true });
         return { ok: true, error: null };
       }
 
       if (process.platform === "darwin") {
+        // Best-effort: open Terminal and run ssh via AppleScript.
         const osa = `tell application "Terminal"\nactivate\ndo script "${sshLine.replaceAll("\\\\", "\\\\\\\\").replaceAll("\"", "\\\\\"")}"\nend tell`;
         spawn("osascript", ["-e", osa], { windowsHide: true });
         return { ok: true, error: null };
       }
 
+      // Linux: best-effort open a terminal emulator.
       spawn("x-terminal-emulator", ["-e", sshLine], { windowsHide: true, shell: true });
       return { ok: true, error: null };
     } catch (err) {
@@ -3664,6 +3902,7 @@ app.whenReady().then(async () => {
     const c = activeCodex();
     const out: any[] = [];
     let cursor: string | null = null;
+    // Cursor pagination: keep fetching until the server says there are no more pages.
     for (;;) {
       const page = (await c.call("model/list", { cursor, limit: 200 })) as any;
       const data = (page?.data ?? []) as any[];

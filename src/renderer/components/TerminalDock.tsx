@@ -34,6 +34,7 @@ export const TerminalDock: React.FC<Props> = (props) => {
     try {
       await navigator.clipboard.writeText(text);
     } catch {
+      // Best-effort.
     }
   }
 
@@ -47,9 +48,11 @@ export const TerminalDock: React.FC<Props> = (props) => {
       if (!text) {
         return;
       }
+      // Normalize newlines so pasted multi-line commands behave like typical terminals.
       const normalized = text.replaceAll("\r\n", "\n").replaceAll("\n", "\r");
       await window.tazhan.terminalWrite({ terminalId, data: normalized });
     } catch {
+      // Best-effort.
     }
   }
 
@@ -78,11 +81,13 @@ export const TerminalDock: React.FC<Props> = (props) => {
         try {
           await window.tazhan.terminalDispose({ terminalId });
         } catch {
+          // Best-effort.
         }
       }
       try {
         termRef.current?.dispose();
       } catch {
+        // Best-effort.
       }
       termRef.current = null;
       fitRef.current = null;
@@ -100,6 +105,7 @@ export const TerminalDock: React.FC<Props> = (props) => {
     }
   }, [props.open]);
 
+  // Start/restart terminal when scope/cwd changes.
   useEffect(() => {
     if (!enabled) {
       setStatus("idle");
@@ -187,6 +193,7 @@ export const TerminalDock: React.FC<Props> = (props) => {
         return true;
       });
 
+      // Wire input -> backend.
       term.onData((data) => {
         const terminalId = terminalIdRef.current;
         if (!terminalId) {
@@ -202,6 +209,7 @@ export const TerminalDock: React.FC<Props> = (props) => {
     };
   }, [enabled, props.cwd, props.scope]);
 
+  // Resize handling.
   useEffect(() => {
     if (!enabled) {
       return;
@@ -227,6 +235,7 @@ export const TerminalDock: React.FC<Props> = (props) => {
     return () => obs.disconnect();
   }, [enabled]);
 
+  // Data stream -> xterm.
   useEffect(() => {
     if (!enabled) {
       return;
@@ -265,6 +274,7 @@ export const TerminalDock: React.FC<Props> = (props) => {
     <div
       className="terminalDockMinimal"
       onContextMenu={(e) => {
+        // Right click to paste is a common terminal convention.
         e.preventDefault();
         void pasteFromClipboard();
       }}

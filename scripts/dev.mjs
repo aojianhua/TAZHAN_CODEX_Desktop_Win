@@ -30,6 +30,7 @@ async function fileExists(filePath) {
 
 async function waitForFile(filePath, timeoutMs) {
   const start = Date.now();
+  // Polling is sufficient here and keeps the script dependency-free.
   while (true) {
     if (await fileExists(filePath)) {
       return;
@@ -49,6 +50,7 @@ function isPortFree(port) {
       .once("listening", () => {
         server.close(() => resolve(true));
       });
+    // Use `localhost` so we detect conflicts on both IPv4 and IPv6 loopback.
     server.listen(port, "localhost");
   });
 }
@@ -56,6 +58,7 @@ function isPortFree(port) {
 async function findFreePort(startPort, maxAttempts) {
   for (let i = 0; i < maxAttempts; i++) {
     const port = startPort + i;
+    // eslint-disable-next-line no-await-in-loop
     const free = await isPortFree(port);
     if (free) {
       return port;
@@ -72,6 +75,7 @@ function spawnLogged(command, args, extra) {
     ...extra
   });
   child.on("error", (err) => {
+    // eslint-disable-next-line no-console
     console.error(`[dev] failed to spawn ${command}:`, err);
   });
   return child;
@@ -82,6 +86,7 @@ async function main() {
   const preferredPort = Number.parseInt(process.env.TAZHAN_DEV_PORT ?? "5173", 10);
   const port = await findFreePort(preferredPort, 50);
 
+  // eslint-disable-next-line no-console
   console.log(`[dev] renderer port: ${port}`);
 
   const distMain = path.join(projectRoot, "dist", "main", "index.js");
@@ -114,14 +119,17 @@ async function main() {
     try {
       electronProc.kill();
     } catch {
+      // ignore
     }
     try {
       tsupProc.kill();
     } catch {
+      // ignore
     }
     try {
       await server.close();
     } catch {
+      // ignore
     }
     process.exit(code ?? 0);
   }
@@ -135,6 +143,7 @@ async function main() {
 }
 
 main().catch((err) => {
+  // eslint-disable-next-line no-console
   console.error("[dev] fatal error:", err);
   process.exit(1);
 });

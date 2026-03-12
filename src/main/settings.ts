@@ -50,6 +50,8 @@ export class SettingsStore {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as Partial<AppSettings> | null;
+      // Deep-merge nested objects so new default fields (e.g. relay/e2ee) are not lost
+      // when loading older settings files.
       return mergeSettings(DEFAULT_SETTINGS, parsed ?? {});
     } catch {
       return { ...DEFAULT_SETTINGS };

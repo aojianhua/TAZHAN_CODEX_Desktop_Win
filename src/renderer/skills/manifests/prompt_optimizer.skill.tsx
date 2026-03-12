@@ -100,9 +100,12 @@ function parseAssignedRolesFromText(text: string): { ok: true; roles: AssignedRo
         }
       }
     } catch {
+      // Fall through to plain text.
     }
   }
 
+  // Plain text fallback: only accept lines that look like role headers.
+  // This avoids treating preambles ("下面给出 N=3...") as role names.
   const lines = String(text ?? "")
     .split(/\r?\n/g)
     .map((l) => l.trim())
@@ -200,6 +203,7 @@ function parsePlannedExpertsFromText(text: string): { ok: true; value: ManagerPl
       if (body) {
         return body;
       }
+      // Last-resort: generic expert prompt.
       return "请从你的专家视角，提出可执行建议，并输出一份可直接发给 code agent 的最终提示词草案。";
     }
 

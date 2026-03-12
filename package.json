@@ -21,6 +21,8 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico"
@@ -36,6 +38,8 @@
     "build:main": "tsup --config tsup.config.ts",
     "build": "pnpm build:main && pnpm build:renderer",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "release:win": "electron-builder --win nsis --publish never"
   },
   "dependencies": {
@@ -61,6 +65,7 @@
     "tsup": "^8.4.0",
     "typescript": "^5.7.3",
     "vite": "^6.1.0",
+    "vitest": "^2.1.8",
     "wait-on": "^8.0.2"
   }
 }

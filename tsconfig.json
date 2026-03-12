@@ -10,5 +10,6 @@
     "noEmit": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "vite.renderer.config.ts", "tsup.config.ts"]
+  "include": ["src", "vite.renderer.config.ts", "tsup.config.ts", "vitest.config.ts"]
 }
+
