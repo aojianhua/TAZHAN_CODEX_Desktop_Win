@@ -37,16 +37,22 @@ Notes:
 
 - `pnpm dev` picks an available renderer port automatically (starting from 5173) to avoid conflicts with other Vite dev servers.
 - If you want to force a specific port, set `TAZHAN_DEV_PORT` (e.g. `TAZHAN_DEV_PORT=5175 pnpm dev`).
-- On pnpm 10, native dependencies such as `node-pty` may require `pnpm approve-builds` once after `pnpm install`.
-
-## Tests
-
-```bash
-pnpm test
-```
 
 ## Build
 
 ```bash
 pnpm build
 ```
+
+## Release
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Pushing a `v*` tag triggers GitHub Actions to build the Windows installer and upload it to GitHub Releases automatically.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=aojianhua/TAZHAN_CODEX_Desktop_Win&type=Date)](https://www.star-history.com/#aojianhua/TAZHAN_CODEX_Desktop_Win&Date)

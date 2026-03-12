@@ -2,9 +2,21 @@
   "name": "tazhan-desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "TAZHAN desktop client for Codex",
+  "author": "aojianhua",
   "main": "dist/main/index.js",
   "build": {
     "appId": "com.tazhan.desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "!dist/**/*.map"
+    ],
+    "npmRebuild": false,
     "win": {
       "icon": "build/icon.ico"
     },
@@ -24,8 +36,7 @@
     "build:main": "tsup --config tsup.config.ts",
     "build": "pnpm build:main && pnpm build:renderer",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "release:win": "electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -50,7 +61,6 @@
     "tsup": "^8.4.0",
     "typescript": "^5.7.3",
     "vite": "^6.1.0",
-    "vitest": "^2.1.8",
     "wait-on": "^8.0.2"
   }
 }

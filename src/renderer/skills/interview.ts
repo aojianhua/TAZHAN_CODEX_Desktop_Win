@@ -29,7 +29,6 @@ function normalizeRawQuestionText(text: string): string {
   if (!raw) {
     return "";
   }
-  // Avoid accidental huge payloads in the UI.
   const limit = 5000;
   if (raw.length > limit) {
     return `${raw.slice(0, limit)}\n…（已截断）`;
@@ -67,7 +66,6 @@ function extractQuestionsFromPlainText(text: string): string[] {
     return qLike.length > 0 ? qLike : out;
   }
 
-  // As a last resort, treat the whole output as a single "question" blob.
   const firstQuestion = raw
     .split(/[\r\n]+/g)
     .map((l) => l.trim())
@@ -93,7 +91,6 @@ export function parseInterviewNextQuestion(
       }
       return { ok: true, value: { done: parsed.done, question, why } };
     } catch (err) {
-      // Fall back to plain text.
     }
   }
 
@@ -128,7 +125,6 @@ export function parseInterviewBatchQuestions(
         }
       }
     } catch {
-      // Fall through.
     }
   }
 

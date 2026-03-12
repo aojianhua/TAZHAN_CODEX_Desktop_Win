@@ -99,7 +99,6 @@ function splitUtf8StringByBytes(input: string, maxBytes: number): string[] {
     while (lo <= hi) {
       const mid = Math.floor((lo + hi) / 2);
       let cand = rest.slice(0, mid);
-      // Avoid splitting a surrogate pair.
       const last = cand.charCodeAt(cand.length - 1);
       if (last >= 0xd800 && last <= 0xdbff) {
         cand = cand.slice(0, -1);
@@ -117,7 +116,6 @@ function splitUtf8StringByBytes(input: string, maxBytes: number): string[] {
     out.push(chunk);
     rest = rest.slice(best);
 
-    // Safety: avoid infinite loops if something weird happens.
     if (out.length > 200_000) {
       break;
     }
@@ -445,11 +443,9 @@ export class RelayDeviceClient extends EventEmitter {
 
     let res = await attempt(auth.accessToken);
     if (res.status === 401 && auth.refreshToken) {
-      // Best-effort refresh and retry once.
       try {
         await this.refreshAuth();
       } catch {
-        // ignore
       }
       const next = this.auth;
       if (next?.accessToken && next.accessToken !== auth.accessToken) {
@@ -523,7 +519,6 @@ export class RelayDeviceClient extends EventEmitter {
       try {
         ws.close();
       } catch {
-        // ignore
       }
     }
     this.setStatus("disconnected", reason ?? "stopped");
@@ -547,7 +542,6 @@ export class RelayDeviceClient extends EventEmitter {
       Math.max(10_000, Math.floor(maxEnvelopeBytes / 2))
     );
 
-    // Chunk terminal stream data aggressively to avoid large websocket frames.
     if (isRecord(rpc) && rpc.method === "tazhan/terminal/event" && isRecord(rpc.params) && rpc.params.type === "data") {
       const terminalId = safeString((rpc.params as any).terminalId);
       const data = safeString((rpc.params as any).data);
@@ -590,7 +584,6 @@ export class RelayDeviceClient extends EventEmitter {
       const tag = method ? ` method=${method}` : "";
       this.log(`[relay] dropping oversized rpc jsonBytes=${jsonBytes} max=${maxEnvelopeBytes}${tag}`);
 
-      // If a response is too large, try to fail fast so the caller doesn't hang.
       if (isRpcResponseLike(payload)) {
         const id = (payload as any).id;
         this.sendRpc({ id, error: { code: -32000, message: `response too large (${jsonBytes} bytes)` } } as any);
@@ -599,7 +592,6 @@ export class RelayDeviceClient extends EventEmitter {
     }
 
     this.unacked.push({ seq: envelope.seq, json });
-    // Best-effort bound: if the cloud isn't acking, avoid unbounded memory growth.
     if (this.unacked.length > 20_000) {
       this.unacked.splice(0, this.unacked.length - 20_000);
       if (!this.unackedCapWarned) {
@@ -651,7 +643,6 @@ export class RelayDeviceClient extends EventEmitter {
 
     ws.onmessage = (evt) => this.handleWsMessage(evt.data);
     ws.onerror = () => {
-      // Error details are generally not surfaced; rely on close.
     };
     ws.onclose = (evt: any) => {
       const code = typeof evt?.code === "number" ? evt.code : null;
@@ -724,22 +715,17 @@ export class RelayDeviceClient extends EventEmitter {
       return;
     }
 
-    // Unknown types are ignored for forward compatibility.
   }
 
   private handleHelloAck(msg: RelayHelloAck): void {
     const resume = safeInt(msg.resumeFromSeq);
     if (resume !== null) {
-      // Server returns the next expected seq (lastAcked + 1). Convert it to lastAcked.
       const serverLastAck = Math.max(0, resume - 1);
 
-      // Server is the source of truth.
       if (serverLastAck > this.lastAckSeq) {
         this.lastAckSeq = serverLastAck;
         this.pruneUnacked();
       } else if (serverLastAck < this.lastAckSeq) {
-        // The server forgot ack state (or a different server). We might not have old messages
-        // anymore; start a fresh stream to avoid replaying an inconsistent sequence.
         this.log(
           `[relay] warning: server resumeFromSeq=${resume} (serverLastAck=${serverLastAck}) behind lastAckSeq=${this.lastAckSeq}; resetting stream`
         );
@@ -750,7 +736,6 @@ export class RelayDeviceClient extends EventEmitter {
     this.setStatus("connected");
     this.reconnectAttempts = 0;
 
-    // Replay any pending messages the server hasn't acked yet.
     for (const it of this.unacked) {
       if (it.seq > this.lastAckSeq) {
         this.trySendRpc(it.json);

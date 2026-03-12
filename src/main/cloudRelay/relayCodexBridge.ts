@@ -46,7 +46,6 @@ function isRpcError(value: unknown): value is RpcError {
 }
 
 function normalizeWindowsPath(p: string): string {
-  // Ensure consistent comparisons on Windows.
   return p.replaceAll("/", "\\");
 }
 
@@ -58,7 +57,6 @@ function isWithinAllowedRoots(relay: RelaySettings, cwd: string): boolean {
 
   const roots = relay.allowedRoots ?? [];
   if (roots.length === 0) {
-    // No allowlist configured. Fail closed for remote execution.
     return false;
   }
 
@@ -83,7 +81,6 @@ function isWithinAllowedRoots(relay: RelaySettings, cwd: string): boolean {
 }
 
 function coerceRpcForCodex(method: string, params: unknown, relay: RelaySettings): unknown {
-  // Enforce remote cwd allowlist if a caller attempts to set cwd explicitly.
   if (isRecord(params) && typeof params.cwd === "string") {
     const cwd = params.cwd;
     if (!isWithinAllowedRoots(relay, cwd)) {
@@ -91,7 +88,6 @@ function coerceRpcForCodex(method: string, params: unknown, relay: RelaySettings
     }
   }
 
-  // Remote safety baseline: do not allow the phone to relax safety in v1.
   if (method === "thread/start" || method === "turn/start") {
     if (isRecord(params)) {
       const next: Record<string, unknown> = { ...params };

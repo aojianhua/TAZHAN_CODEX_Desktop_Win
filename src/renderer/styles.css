@@ -34,7 +34,6 @@ body {
   box-sizing: border-box;
 }
 
-/* Subtle, borderless scrollbars (Chromium/Electron + Firefox). */
 .scroll,
 .chatBody,
 .popMenu,

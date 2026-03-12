@@ -59,8 +59,6 @@ function parseVersion(output: string): string | null {
 }
 
 async function detectCodexPath(client: Client): Promise<string | null> {
-  // NOTE: ssh2 exec runs non-interactive shells by default, so user profile PATH may not be loaded.
-  // We try several strategies to find the codex binary.
   const direct = firstLine(
     (await execSsh(client, "sh -c \"command -v codex 2>/dev/null || true\"", 4000)).stdout
   );
@@ -235,7 +233,6 @@ export async function sshProbe(args: SshProbeArgs): Promise<SshProbeResult> {
     try {
       client.end();
     } catch {
-      // Best-effort.
     }
   }
 }

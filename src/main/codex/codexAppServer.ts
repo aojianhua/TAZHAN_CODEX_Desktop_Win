@@ -37,10 +37,6 @@ export class CodexAppServer extends EventEmitter {
     const command = codexPath.trim().length > 0 ? codexPath.trim() : "codex";
     const useShell = process.platform === "win32";
     try {
-      // On Windows, npm installs `codex` as `codex.cmd`/`codex.ps1`. Spawning with a shell
-      // makes this work consistently without requiring users to set an explicit .exe path.
-      // NOTE: Older Codex builds don't support the `--listen` flag on `codex app-server`.
-      // Stdio is the default transport, so omit `--listen` for maximum compatibility.
       this.proc = spawn(command, ["app-server"], {
         stdio: "pipe",
         shell: useShell,

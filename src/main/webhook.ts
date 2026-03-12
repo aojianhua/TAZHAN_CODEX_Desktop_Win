@@ -11,6 +11,5 @@ export async function sendWebhook(url: string, payload: unknown): Promise<void> 
       body: JSON.stringify(payload)
     });
   } catch {
-    // Best-effort: webhook failures should not impact the agent loop.
   }
 }

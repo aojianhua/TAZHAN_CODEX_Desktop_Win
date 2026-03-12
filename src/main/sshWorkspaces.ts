@@ -26,7 +26,6 @@ function firstLine(text: string): string {
 }
 
 function shQuotePosix(value: string): string {
-  // Safe single-quote for POSIX shells.
   const s = String(value ?? "");
   return `'${s.replaceAll("'", `'\"'\"'`)}'`;
 }
@@ -90,7 +89,6 @@ async function sftpStatSafe(sftp: any, absPath: string): Promise<null | { kind: 
           return;
         }
       } catch {
-        // fallthrough
       }
       resolve({ kind: "file" });
     });
@@ -215,7 +213,6 @@ export async function scanRemoteWorkspaces(args: SshProbeArgs): Promise<RemoteWo
     try {
       client.end();
     } catch {
-      // Best-effort.
     }
   }
 }
@@ -280,7 +277,6 @@ export async function mkdirRemoteAbs(args: RemoteWorkspaceMkdirAbsArgs): Promise
       });
     });
 
-    // Use "$1" to avoid shell injection issues.
     const mkdirOut = await execSsh(client, `sh -c 'mkdir -p -- "$1"' _ ${shQuotePosix(absPath)}`, 8_000);
     if (mkdirOut.code !== 0) {
       const hint = firstLine(`${mkdirOut.stderr}\n${mkdirOut.stdout}`.trim());
@@ -309,7 +305,6 @@ export async function mkdirRemoteAbs(args: RemoteWorkspaceMkdirAbsArgs): Promise
     try {
       client.end();
     } catch {
-      // Best-effort.
     }
   }
 }

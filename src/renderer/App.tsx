@@ -1121,7 +1121,6 @@ export function App(): JSX.Element {
     });
   }, [eventLog, logQuery]);
 
-  // terminalDockOpen is only a UI toggle; the terminal itself is managed by <TerminalDock />.
 
   const hasRunningThreads = useMemo(
     () => Object.values(threadsById).some((t) => t.running) || Object.values(remoteThreadsById).some((t) => t.running),
@@ -1297,8 +1296,6 @@ export function App(): JSX.Element {
   }, [fileOp?.threadId, viewActiveThreadId, viewScope]);
 
   useEffect(() => {
-    // Auto reply is intentionally scoped to the active thread. If the user switches threads,
-    // drop any queued auto-reply that hasn't been sent yet to avoid surprising "late sends".
     const setRuntime =
       viewScope === "remote" ? setRemoteAutoReplyRuntimeByThreadId : setAutoReplyRuntimeByThreadId;
     setRuntime((prev) => {
@@ -1322,7 +1319,6 @@ export function App(): JSX.Element {
     if (!newChatOpen || status !== "connected") {
       return;
     }
-    // Ensure we have enough thread metadata loaded to suggest resumable sessions for the selected cwd.
     void refreshThreads();
   }, [newChatOpen, status]);
 
@@ -1591,7 +1587,6 @@ export function App(): JSX.Element {
     }
 
     if (viewScope === "remote") {
-      // Remote workspaces don't currently support fs watching; fall back to polling.
       explorerWatchKeyRef.current = "";
       setExplorerWatchEnabled(false);
       void window.tazhan.workspaceWatchSet({ root: "", dirs: [] });
@@ -1693,7 +1688,6 @@ export function App(): JSX.Element {
       if (disposed) {
         return;
       }
-      // Best-effort: don't stomp on user-initiated loads.
       const thread =
         scope === "remote" ? remoteThreadsByIdRef.current[threadId] ?? null : threadsByIdRef.current[threadId] ?? null;
       const loading = Boolean(thread?.explorer.loadingDirs?.[dir]);
@@ -1762,7 +1756,6 @@ export function App(): JSX.Element {
         .map(([dir]) => dir)
         .filter(Boolean);
 
-      // Always refresh the root so top-level stays current.
       await refreshDir(root, root);
 
       const others = openDirs.filter((d) => d !== root);
@@ -2110,14 +2103,12 @@ export function App(): JSX.Element {
           .remoteWorkspaceStatus()
           .then((st) => setRemoteStatus(st))
           .catch(() => {
-            // Best-effort.
           });
 
         if (ev.status === "connected") {
           void refreshModels("remote");
           void refreshThreads("remote");
         } else if (ev.status === "disconnected" || ev.status === "exited") {
-          // Clear any remote UI state; local state stays intact.
           setRemoteActiveThreadId(null);
           setRemoteThreadsById({});
           setRemoteThreadOrder([]);
@@ -2397,7 +2388,6 @@ export function App(): JSX.Element {
             };
           });
 
-          // Auto reply (optional): schedule a follow-up user message after the turn completes.
           const s = settingsRef.current;
           const cfg = s?.autoReply ?? null;
           const activeId = activeThreadIdRef.current;
@@ -2675,7 +2665,6 @@ export function App(): JSX.Element {
   async function connect(): Promise<void> {
     try {
       if (remoteStatus?.connected) {
-        // Switching to local Codex invalidates any cached remote thread ids.
         setActiveThreadId(null);
         setThreadMenuOpenId(null);
         setThreadsById({});
@@ -3400,7 +3389,6 @@ export function App(): JSX.Element {
         }
       }
 
-      // Generate PRD
       const transcript = formatInterviewTranscript(seedText, nextQa);
       const prdRes = await window.tazhan.llmChatComplete({
         messages: [
@@ -3797,7 +3785,6 @@ export function App(): JSX.Element {
       const st = await window.tazhan.remoteWorkspaceStatus();
       setRemoteStatus(st);
 
-      // Clear remote caches (local stays intact).
       setRemoteActiveThreadId(null);
       setRemoteThreadsById({});
       setRemoteThreadOrder([]);
@@ -3918,12 +3905,10 @@ export function App(): JSX.Element {
         return;
       }
 
-      // Config is read when the codex process starts, so reconnect to apply changes.
       if (status === "connected") {
         try {
           await window.tazhan.codexDisconnect();
         } catch {
-          // Best-effort.
         }
         void connect();
       }
@@ -4050,7 +4035,6 @@ export function App(): JSX.Element {
       try {
         await window.tazhan.codexDisconnect();
       } catch {
-        // Best-effort.
       }
     }
 
@@ -4102,8 +4086,6 @@ export function App(): JSX.Element {
         cursor: null,
         limit: 50,
         sortKey: "updated_at",
-        // Include threads across all model providers. The app-server defaults to the active provider
-        // when `modelProviders` is omitted, which can make history look "empty" after config changes.
         modelProviders: [],
         archived: false
       });
@@ -4291,7 +4273,6 @@ export function App(): JSX.Element {
       return;
     }
 
-    // Persist defaults so next new chat starts from the latest choices.
     const model = newChatModel.trim();
     const settingsPatch: Partial<AppSettings> = {
       defaultCwd: cwd,
@@ -4785,8 +4766,6 @@ export function App(): JSX.Element {
         }
       }
     } else {
-      // `remoteStatus` is updated via async state, so it can lag right after connecting.
-      // Ask the main process for the authoritative status before refusing to start a remote thread.
       try {
         const st = await window.tazhan.remoteWorkspaceStatus();
         if (!st?.connected) {
@@ -5572,8 +5551,6 @@ export function App(): JSX.Element {
                   {open ? (
                     <div className="diffBox mono">
                       {ch.diff.split("\n").map((line, idx) => (
-                        // idx is stable enough here because we only render within a single diff string.
-                        // eslint-disable-next-line react/no-array-index-key
                         <div key={idx} className={diffLineClass(line)}>
                           {line.length === 0 ? " " : line}
                         </div>
@@ -5597,7 +5574,6 @@ export function App(): JSX.Element {
     return (
       <div className="diffBox mono">
         {diff.split("\n").map((line, idx) => (
-          // eslint-disable-next-line react/no-array-index-key
           <div key={idx} className={diffLineClass(line)}>
             {line.length === 0 ? " " : line}
           </div>
@@ -5686,7 +5662,6 @@ export function App(): JSX.Element {
       .filter((it) => Boolean(it))
       .filter((it) => {
         const ty = String((it as any)?.type ?? "");
-        // userMessage/agentMessage already appear in the chat UI.
         return ty !== "userMessage" && ty !== "agentMessage";
       });
 
@@ -5707,7 +5682,6 @@ export function App(): JSX.Element {
             {plan.plan.length ? (
               <div className="activityPlanList">
                 {plan.plan.map((p, idx) => (
-                  // eslint-disable-next-line react/no-array-index-key
                   <div key={idx} className={`activityPlanStep status_${p.status}`}>
                     <span className="activityPlanStatus">{p.status}</span>
                     <span className="activityPlanText">{p.step}</span>
@@ -5770,7 +5744,6 @@ export function App(): JSX.Element {
       .filter((it) => Boolean(it))
       .filter((it) => {
         const ty = String((it as any)?.type ?? "");
-        // userMessage/agentMessage already appear in the chat UI.
         return ty !== "userMessage" && ty !== "agentMessage";
       });
   }
@@ -5926,8 +5899,6 @@ export function App(): JSX.Element {
     const scope = viewScope;
     const cursor = viewThreadListCursor;
 
-    // If a thread is active but the list hasn't been hydrated yet (common right after remote connect),
-    // still show the active thread row so the UI isn't blank.
     const orderOrActive = order.length > 0 ? order : activeId ? [activeId] : [];
     if (orderOrActive.length === 0) {
       return <div className="empty">暂无会话（连接后可加载历史）</div>;
@@ -5950,8 +5921,6 @@ export function App(): JSX.Element {
         })
       : orderOrActive;
 
-    // Default: only show the latest session per workspace (cwd) to reduce clutter.
-    // When searching, show all matches so older sessions remain discoverable.
     const ids = query
       ? filteredIds
       : (() => {
@@ -5965,7 +5934,6 @@ export function App(): JSX.Element {
             }
           }
 
-          // Ensure the active session's workspace row stays visible/selected even if it's not the newest session.
           if (activeId) {
             const activeThread = byId[activeId] ?? makeThreadState(activeId);
             const cwd = activeThread.meta.cwd.trim();
@@ -6109,7 +6077,6 @@ export function App(): JSX.Element {
                     try {
                       await navigator.clipboard.writeText(id);
                     } catch {
-                      // Best-effort.
                     }
                   }}
                   type="button"
@@ -7080,7 +7047,6 @@ export function App(): JSX.Element {
                               try {
                                 await navigator.clipboard.writeText(m.text);
                               } catch {
-                                // Best-effort.
                               }
                             }}
                             disabled={!canCopy}
@@ -7135,7 +7101,6 @@ export function App(): JSX.Element {
                                   try {
                                     await navigator.clipboard.writeText(m.text);
                                   } catch {
-                                    // Best-effort.
                                   }
                                 }}
                                 disabled={!canCopy}
@@ -9063,7 +9028,6 @@ export function App(): JSX.Element {
                   try {
                     await window.tazhan.codexDisconnect();
                   } catch {
-                    // Best-effort.
                   }
                 }}
                 disabled={status !== "connected"}
@@ -9119,7 +9083,6 @@ export function App(): JSX.Element {
                         try {
                           await navigator.clipboard.writeText(relayPairingCode);
                         } catch {
-                          // Best-effort.
                         }
                       }}
                       type="button"
@@ -9141,7 +9104,6 @@ export function App(): JSX.Element {
                       try {
                         await navigator.clipboard.writeText(relayPairingQrPayload);
                       } catch {
-                        // Best-effort.
                       }
                     }}
                     disabled={!relayPairingQrPayload}
@@ -9273,7 +9235,6 @@ export function App(): JSX.Element {
                       try {
                         await navigator.clipboard.writeText(JSON.stringify(peers, null, 2));
                       } catch {
-                        // Best-effort.
                       }
                     }}
                     disabled={!(settings?.relay.e2ee.trustedPeers ?? []).length}
@@ -9602,7 +9563,6 @@ export function App(): JSX.Element {
                         try {
                           await window.tazhan.openInExplorer(apiLiveCodexHome);
                         } catch {
-                          // Best-effort.
                         }
                       }}
                       type="button"

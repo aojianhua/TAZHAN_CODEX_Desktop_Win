@@ -42,23 +42,17 @@ export type RelayDeviceAuth = {
 export type RelayE2eeTrustedPeer = {
   keyId: string;
   label: string;
-  // base64(spki der)
   ed25519PublicKey: string;
   addedAt: number;
 };
 
 export type RelayE2eeSettings = {
   enabled: boolean;
-  // If true, desktop refuses to process plaintext remote commands (only accepts e2ee packets/handshake).
   required: boolean;
-  // Trust-on-first-use for peer keys. Prefer false in production.
   allowTofu: boolean;
 
-  // Device signing identity (ed25519). Public key can be published via cloud APIs.
   deviceKeyId: string;
-  // base64(spki der)
   deviceEd25519PublicKey: string;
-  // base64(pkcs8 der) or "enc:<base64(electron safeStorage encrypted bytes)>"
   deviceEd25519PrivateKey: string;
 
   trustedPeers: RelayE2eeTrustedPeer[];

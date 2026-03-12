@@ -75,7 +75,6 @@ function firstLine(text: string): string {
 }
 
 function shQuotePosix(value: string): string {
-  // Safe single-quote for POSIX shells.
   const s = String(value ?? "");
   return `'${s.replaceAll("'", `'\"'\"'`)}'`;
 }
@@ -161,7 +160,6 @@ async function ensureDir(sftp: SFTPWrapper, p: string): Promise<void> {
       }
       continue;
     } catch {
-      // try create
     }
     await sftpMkdir(sftp, cur);
   }
@@ -345,8 +343,6 @@ async function detectCodexBin(client: Client): Promise<string | null> {
     return viaBash;
   }
 
-  // nvm installs global npm bins under ~/.nvm/versions/node/<ver>/bin.
-  // This often isn't on PATH for non-interactive ssh exec shells.
   const viaNvm = firstLine(
     (
       await execSshOnce(
@@ -440,7 +436,6 @@ async function resolveCodexJs(client: Client, codexBin: string): Promise<string>
     return out;
   }
 
-  // Fallback if readlink isn't available for some reason.
   const py = firstLine(
     (
       await execSshOnce(
@@ -547,13 +542,11 @@ export class RemoteWorkspace extends EventEmitter {
       });
     });
 
-    // Validate workspace root exists and is a directory.
     const rootStat = await sftpStat(this.sftp, workspaceRoot);
     if (statsKind(rootStat) !== "dir") {
       throw new Error("workspaceRoot is not a directory");
     }
 
-    // Resolve codex/node paths explicitly so we don't depend on login shell PATH.
     const codexBin = await detectCodexBin(ssh);
     if (!codexBin) {
       throw new Error("remote codex not found (PATH not loaded?)");
@@ -569,7 +562,6 @@ export class RemoteWorkspace extends EventEmitter {
       line: `[remote] resolved codexBin=${codexBin} nodeBin=${nodeBin} codexJs=${codexJs}`
     });
 
-    // Use node + codex.js to bypass env shebang PATH resolution.
     const appServerCmd = `${shQuotePosix(nodeBin)} ${shQuotePosix(codexJs)} app-server`;
     const cmd = useLoginShell ? `bash -lc ${shQuotePosix(appServerCmd)}` : `sh -c ${shQuotePosix(appServerCmd)}`;
     this.channel = await new Promise<ClientChannel>((resolve, reject) => {
@@ -648,33 +640,28 @@ export class RemoteWorkspace extends EventEmitter {
     try {
       this.rpc?.dispose("disconnect requested");
     } catch {
-      // Best-effort.
     }
     this.rpc = null;
 
     try {
       this.channel?.close();
     } catch {
-      // Best-effort.
     }
     try {
       this.channel?.end();
     } catch {
-      // Best-effort.
     }
     this.channel = null;
 
     try {
       this.sftp?.end();
     } catch {
-      // Best-effort.
     }
     this.sftp = null;
 
     try {
       this.ssh?.end();
     } catch {
-      // Best-effort.
     }
     this.ssh = null;
 
@@ -747,7 +734,6 @@ export class RemoteWorkspace extends EventEmitter {
         });
       });
 
-      // Best-effort: start in the requested directory.
       ch.write(`cd ${shQuotePosix(cwdAbs)}\n`);
       return { ok: true, channel: ch };
     } catch (err) {
