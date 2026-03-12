@@ -1,4 +1,34 @@
-# TAZHAN_CODEX_Desktop_Win
-codex可视化窗口，做了很多我平时需要的功能。可以同时连接云端会话并发进行。
-塔栈是我想的一个名字，觉得还挺好听的
-目前这个桌面端依然是半成品东西，但是我目前没精力弄了，如果有任何想加入我的开发者，请留言或者进入Q群1042659807
+# TAZHAN Desktop (Electron)
+
+Minimal desktop app that hosts `codex app-server` (stdio) and provides a simple UI to start a thread/turn, stream events, and handle approvals.
+
+## Prerequisites
+
+- Node.js 22+
+- pnpm 10+
+- `codex` installed and available on PATH (or configure an absolute path in the UI)
+
+## Development
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Notes:
+
+- `pnpm dev` picks an available renderer port automatically (starting from 5173) to avoid conflicts with other Vite dev servers.
+- If you want to force a specific port, set `TAZHAN_DEV_PORT` (e.g. `TAZHAN_DEV_PORT=5175 pnpm dev`).
+- On pnpm 10, native dependencies such as `node-pty` may require `pnpm approve-builds` once after `pnpm install`.
+
+## Tests
+
+```bash
+pnpm test
+```
+
+## Build
+
+```bash
+pnpm build
+```
